@@ -32,7 +32,54 @@ input[type=range]{flex:1;height:6px;background:#333;border-radius:999px;accent-c
 .storage-fill{height:100%;background:linear-gradient(90deg,#0f0,#00aaff);width:0%;transition:width .3s}
 .color-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;cursor:pointer;border:1px solid #fff3}
 </style>
-<script>(function(){ var _open=window.open; window.open=function(u,n,s){ try{ return _open.call(window,u,n,s); }catch(e){ var a=document.createElement('a'); a.href=u; a.target=n||'_blank'; a.click(); return null; } }; })();</script>
+<script>(function(){ var _open=window.open; window.open=function(u,n,s){ try{ return _open.call(window,u,n,s); }catch(e){ var a=document.createElement('a'); a.href=u; a.target=n||'_blank'; a.click(); return null; } }; })();
+// === DISCORD UPLOAD ===
+function saveWebhook(){
+  var url = document.getElementById('discordWebhook').value.trim();
+  if(!url){ alert('Add meg a webhook URL-t!'); return; }
+  localStorage.setItem('discord_webhook_url', url);
+  document.getElementById('discordStatus').textContent='✅ Webhook mentve!';
+}
+(function(){ try{ var s=localStorage.getItem('discord_webhook_url'); if(s) setTimeout(function(){ var i=document.getElementById('discordWebhook'); if(i) i.value=s; },800); }catch(e){} })();
+function dataURLtoBlob(dataurl){
+  var arr=dataurl.split(','), mime=arr[0].match(/:(.*?);/)[1], bstr=atob(arr[1]), n=bstr.length, u8arr=new Uint8Array(n);
+  while(n--){ u8arr[n]=bstr.charCodeAt(n); } return new Blob([u8arr], {type:mime});
+}
+async function uploadToDiscordBlob(blob, filename, content){
+  var webhook=(document.getElementById('discordWebhook').value||localStorage.getItem('discord_webhook_url')||'').trim();
+  if(!webhook){ alert('Nincs webhook!'); return false; }
+  var statusEl=document.getElementById('discordStatus');
+  var proxies=['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
+  for(var pi=0; pi<proxies.length; pi++){
+    var url=proxies[pi]?proxies[pi]+encodeURIComponent(webhook):webhook;
+    try{
+      statusEl.textContent='⏳ Próbálkozás '+(pi+1)+'/'+proxies.length+': '+filename;
+      var form=new FormData(); form.append('file', blob, filename); if(content) form.append('payload_json', JSON.stringify({content:content}));
+      var resp=await fetch(url,{method:'POST', body:form});
+      if(resp.ok||resp.status==200||resp.status==204){ statusEl.textContent='✅ SIKER! '+filename+' → Discord #képek-upload!'; return true; }
+    }catch(e){ console.log(e); }
+  }
+  statusEl.textContent='❌ Böngésző blokkolja. HASZNÁLD: SÁRGA Letöltés gomb → húzd be Discordba!';
+  return false;
+}
+async function uploadCurrentToDiscord(){
+  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet bal oldalt!'); return; }
+  var p=PROJECTS[curIndex]; var blob=dataURLtoBlob(p.dataUrl); await uploadToDiscordBlob(blob,p.name,'📸 '+p.name);
+}
+function downloadCurrentImage(){
+  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet!'); return; }
+  var p=PROJECTS[curIndex]; var a=document.createElement('a'); a.href=p.dataUrl; a.download=p.name; a.click();
+  document.getElementById('discordStatus').textContent='⬇️ Letöltve: '+p.name+' → Húzd be Discord #képek-upload-ba!';
+}
+async function copyImageToClipboard(){
+  try{
+    var p=PROJECTS[curIndex]; var blob=dataURLtoBlob(p.dataUrl);
+    await navigator.clipboard.write([new ClipboardItem({[blob.type]:blob})]);
+    document.getElementById('discordStatus').textContent='📋 Vágólapra! Discordban Ctrl+V!';
+  }catch(e){ alert('Használd a Letöltést!'); }
+}
+function uploadAllToDiscord(){}
+</script>
 </head>
 <body>
 <div class="topbar">
@@ -54,11 +101,13 @@ input[type=range]{flex:1;height:6px;background:#333;border-radius:999px;accent-c
 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
 <button onclick="exportJsonModal()" class="btn" style="flex:1;background:#ffcc00;color:#000">📤 EXPORT JSON</button>
 <button onclick="document.getElementById('fileImportJson').click()" class="btn" style="flex:1;background:#ccff00;color:#000">📥 IMPORT JSON</button>
+<button onclick="document.getElementById('fileImportHtml').click()" class="btn" style="flex:1;background:#00ffaa;color:#000">📥 IMPORT HTML</button>
 <button onclick="deleteAllProjects()" class="btn" style="background:#aa0000;color:#fff">🗑️ DEL</button>
 </div>
 
 <input type="file" id="fileImportImg" accept=".jpg,.jpeg,.bmp,.png,.webp,.gif,.avif,.svg,image/*" style="display:none" multiple>
 <input type="file" id="fileImportJson" accept=".json,.txt" style="display:none">
+<input type="file" id="fileImportHtml" accept=".html,.htm" style="display:none">
 
 <div style="margin-top:12px">
 <div style="display:flex;justify-content:space-between;font-size:11px;font-family:Arial"><span>Tárhely: <span id="storageText">0 / 500 MB</span></span><span id="storagePercent">0%</span></div>
@@ -72,6 +121,21 @@ input[type=range]{flex:1;height:6px;background:#333;border-radius:999px;accent-c
 </div>
 <div class="right">
 <div id="previewWrap">
+
+<div id="discordBox" style="background:#111;border:2px solid #5865f2;border-radius:10px;padding:10px;margin-bottom:12px;">
+<div style="color:#5865f2;font-weight:bold;font-size:13px;margin-bottom:6px;">📤 DISCORD FELTÖLTÉS - #képek-upload</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap;">
+<input id="discordWebhook" placeholder="https://discord.com/api/webhooks/..." style="flex:1;min-width:200px;background:#000;color:#fff;border:1px solid #5865f2;border-radius:6px;padding:8px;font-size:11px;">
+<button onclick="saveWebhook()" style="background:#5865f2;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;font-weight:bold;font-size:11px;">💾 Mentés</button>
+</div>
+<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+<button onclick="uploadCurrentToDiscord()" style="flex:1;background:#00ff00;color:#000;border:none;border-radius:6px;padding:10px;font-weight:bold;cursor:pointer;">📸 Discordra (auto)</button>
+<button onclick="downloadCurrentImage()" style="flex:1;background:#ffcc00;color:#000;border:none;border-radius:6px;padding:10px;font-weight:bold;cursor:pointer;">⬇️ Letöltés → húzd Discordba</button>
+<button onclick="copyImageToClipboard()" style="flex:1;background:#00aaff;color:#fff;border:none;border-radius:6px;padding:10px;font-weight:bold;cursor:pointer;">📋 Vágólapra + Ctrl+V</button>
+</div>
+<div id="discordStatus" style="margin-top:6px;font-size:11px;color:#888;white-space:pre-wrap;min-height:16px;"></div>
+</div>
+
 <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
 <span id="previewName" style="color:#0f0;font-size:13px;font-family:Arial;font-weight:400;flex:1"></span>
 <span id="previewSize" style="color:#888;font-size:11px;font-family:Arial"></span>
@@ -267,7 +331,8 @@ function render(){
 }
 
 window.downloadAllProjects=function(){
-  let html='<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Képtároló Export - '+PROJECTS.length+' db</title><style>'+
+  if(PROJECTS.length===0){ alert('Nincs kép exportálni!'); return; }
+  let html='<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Képtároló Export - '+PROJECTS.length+' db - ZÖLD</title><style>'+
 'body{background:#000;color:#0f0;font-family:Arial;margin:0;padding:16px}'+
 'h1{color:#0f0;font-size:22px;margin:0}'+
 '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:16px}'+
@@ -277,34 +342,51 @@ window.downloadAllProjects=function(){
 'a{color:#0f0}'+
 '.topbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}'+
 '.btn{background:#0f0;color:#000;border:none;border-radius:999px;padding:8px 14px;font-weight:800;cursor:pointer}'+
-'.btn2{background:#111;border:1px solid #0f0;color:#0f0;border-radius:999px;padding:8px 14px;font-weight:700;cursor:pointer}'+
+'.btn2{background:#111;border:2px solid #0f0;color:#0f0;border-radius:999px;padding:8px 14px;font-weight:700;cursor:pointer}'+
+'.btn2:hover{background:#0f0;color:#000}'+
 '#lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:20px}'+
 '#lb.on{display:flex}'+
-'#lb img{max-width:92vw;max-height:80vh;border:3px solid #0f0;border-radius:12px;box-shadow:0 0 30px #0f0a}'+
+'#lbImg{max-width:92vw;max-height:72vh;border:3px solid #0f0;border-radius:12px;box-shadow:0 0 30px #0f0a;cursor:grab;transition:transform 0.15s}'+
 '.lb-x{position:absolute;top:14px;right:18px;background:#ff0000;color:#fff;border:none;border-radius:50%;width:42px;height:42px;font-size:22px;font-weight:800;cursor:pointer}'+
 '.lb-n{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,255,0,0.15);border:2px solid #0f0;color:#0f0;width:48px;height:48px;border-radius:50%;font-size:26px;cursor:pointer}'+
 '.lb-p{left:14px} .lb-nx{right:14px}'+
 '.lb-bar{margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center}'+
 '.lb-info{margin-top:8px;color:#0f0;font-size:13px;text-align:center}'+
+'#lbZoom{width:160px;accent-color:#00ff00}'+
+'#lbZoomBadge{background:#000;border:1px solid #0f0;color:#0f0;border-radius:999px;padding:2px 10px;font-size:11px}'+
+'#lbResizer{position:absolute;right:20px;bottom:86px;width:32px;height:32px;background:#000;border:2px solid #00aaff;border-radius:8px;cursor:nwse-resize;display:flex;align-items:center;justify-content:center;z-index:100;box-shadow:0 0 12px #00aaff}'+
+'#lbResizer::after{content:\'↘\';color:#00aaff;font-size:18px;font-weight:900}'+
 '</style></head><body>'+
-'<div class="topbar"><h1>Képtároló Export - '+PROJECTS.length+' db - '+(getTotalSize()/1024/1024).toFixed(2)+' MB</h1><div style="display:flex;gap:8px"><button class="btn2" onclick="openLB(0)">🔍 Első megnyitása</button><button class="btn" onclick="window.close()">✕ Bezárás</button></div></div>'+
+'<div class="topbar"><h1>📸 Képtároló Export - '+PROJECTS.length+' db - '+(getTotalSize()/1024/1024).toFixed(2)+' MB - 8 szín</h1><div style="display:flex;gap:8px"><button class="btn2" onclick="openLB(0)">🔍 Első</button><button class="btn" onclick="window.close()">✕ Bezárás</button></div></div>'+
 '<div class="grid">'+
 PROJECTS.map((p,i)=>{
   let w = p.width||p.w||0; let h = p.height||p.h||0;
-  let sizeKB = p.size ? (p.size/1024).toFixed(1) : (p.dataUrl ? (Math.round((p.dataUrl.length*3/4)/1024*10)/10) : 0);
+  let sizeKB = p.size ? parseFloat(p.size) : (p.dataUrl ? (Math.round((p.dataUrl.length*3/4)/1024*10)/10) : 0);
   let dim = (w&&h) ? w+'x'+h+' • ' : '';
-  let label = dim + sizeKB + ' kB - ' + p.color;
-  return '<div class="card"><div style="font-size:12px;color:#0f0;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+p.name+' ('+label+')</div><img src="'+p.dataUrl+'" onclick="openLB('+i+')" title="Katt a teljes képhez"><div style="margin-top:8px;display:flex;gap:12px"><a href="'+p.dataUrl+'" download="'+p.name+'">Letöltés</a><a href="#" onclick="openLB('+i+');return false;" style="margin-left:auto">🔍 Megnyitás</a></div></div>';
+  let label = dim + sizeKB + ' kB - ' + (p.color||'#00ff00');
+  let borderCol = p.color||'#00ff00';
+  return '<div class="card" style="border-color:'+borderCol+'"><div style="font-size:12px;color:'+borderCol+';margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700">'+p.name+' ('+label+')</div><img src="'+p.dataUrl+'" onclick="openLB('+i+')" title="Katt a teljes képhez" style="border-color:'+borderCol+'"><div style="margin-top:8px;display:flex;gap:12px"><a href="'+p.dataUrl+'" download="'+p.name+'" style="color:'+borderCol+'">⬇ Letöltés</a><a href="#" onclick="openLB('+i+');return false;" style="margin-left:auto">🔍 Megnyitás</a></div></div>';
 }).join('')+
 '</div>'+
-'<div id="lb" onclick="if(event.target.id==\'lb\') closeLB()"><button class="lb-x" onclick="closeLB()">✕</button><button class="lb-n lb-p" onclick="navLB(-1)">‹</button><img id="lbImg" src=""><button class="lb-n lb-nx" onclick="navLB(1)">›</button><div class="lb-bar"><button class="btn2" onclick="closeLB()">✕ Bezárás</button><a id="lbDl" href="#" download style="background:#0f0;color:#000;border-radius:999px;padding:8px 14px;text-decoration:none;font-weight:800">⬇ Letöltés</a><button class="btn2" onclick="navLB(-1)">‹ Előző</button><button class="btn2" onclick="navLB(1)">Következő ›</button></div><div class="lb-info" id="lbInfo"></div></div>'+
-'<script>let cur=0;let L='+JSON.stringify(PROJECTS.map(p=>({d:p.dataUrl,n:p.name,s:p.size,w:p.width||p.w||0,h:p.height||p.h||0,c:p.color})))+';function openLB(i){cur=i;let o=L[i];document.getElementById(\'lbImg\').src=o.d;let a=document.getElementById(\'lbDl\');a.href=o.d;a.download=o.n;let kb = o.s ? (o.s/1024).toFixed(1) : (Math.round((o.d.length*3/4)/1024*10)/10); let dim=(o.w&&o.h)?o.w+\'x\'+o.h+\' • \':\'\'; document.getElementById(\'lbInfo\').textContent=(i+1)+\'/\'+L.length+\' - \'+o.n+\' - \'+dim+kb+\' kB - \'+o.c;document.getElementById(\'lb\').classList.add(\'on\');document.body.style.overflow=\'hidden\';}'+
+'<div id="lb" onclick="if(event.target.id==\'lb\') closeLB()"><button class="lb-x" onclick="closeLB()">✕</button><button class="lb-n lb-p" onclick="navLB(-1)">‹</button><img id="lbImg" src="" draggable="false"><button class="lb-n lb-nx" onclick="navLB(1)">›</button><div id="lbResizer" title="Húzd: méretezés 30-400%"></div><div class="lb-bar"><button class="btn2" onclick="closeLB()">✕ Bezárás</button><a id="lbDl" href="#" download style="background:#0f0;color:#000;border-radius:999px;padding:8px 14px;text-decoration:none;font-weight:800">⬇ Letöltés</a><input id="lbZoom" type="range" min="30" max="400" value="100"><span id="lbZoomBadge">100%</span><button class="btn2" onclick="navLB(-1)">‹ Előző</button><button class="btn2" onclick="navLB(1)">Következő ›</button></div><div class="lb-info" id="lbInfo"></div></div>'+
+'<script>let cur=0;let L='+JSON.stringify(PROJECTS.map(p=>({d:p.dataUrl,n:p.name,s:p.size,w:p.width||p.w||0,h:p.height||p.h||0,c:p.color})))+';let lbZ=100, lbTX=0, lbTY=0, lbDrag=false, lbSX=0, lbSY=0;function updZ(v){lbZ=Math.max(30,Math.min(400,v));let im=document.getElementById(\'lbImg\'), bd=document.getElementById(\'lbZoomBadge\'), sl=document.getElementById(\'lbZoom\'); if(sl) sl.value=lbZ; if(bd) bd.textContent=lbZ+\'%\'; if(im) im.style.transform=\'scale(\'+(lbZ/100)+\') translate(\'+lbTX+\'px,\'+lbTY+\'px)\';} function openLB(i){cur=i;let o=L[i];let im=document.getElementById(\'lbImg\'); if(im){im.src=o.d; lbZ=100; lbTX=0; lbTY=0; im.style.transform=\'scale(1) translate(0,0)\';} let a=document.getElementById(\'lbDl\');a.href=o.d;a.download=o.n;let kb = o.s ? (parseFloat(o.s)||0) : (Math.round((o.d.length*3/4)/1024*10)/10); let dim=(o.w&&o.h)?o.w+\'x\'+o.h+\' • \':\'\'; document.getElementById(\'lbInfo\').textContent=(i+1)+\'/\'+L.length+\' - \'+o.n+\' - \'+dim+kb+\' kB - \'+o.c+\' - méret állítható görgő/sarok/csúszka\';document.getElementById(\'lb\').classList.add(\'on\');document.body.style.overflow=\'hidden\'; let sl=document.getElementById(\'lbZoom\'); if(sl) sl.value=100; let bd=document.getElementById(\'lbZoomBadge\'); if(bd) bd.textContent=\'100%\';}'+
 'function closeLB(){document.getElementById(\'lb\').classList.remove(\'on\');document.body.style.overflow=\'\';}'+
 'function navLB(d){let n=cur+d;if(n<0)n=L.length-1;if(n>=L.length)n=0;openLB(n);}'+
-'document.addEventListener(\'keydown\',e=>{let lb=document.getElementById(\'lb\');if(!lb.classList.contains(\'on\'))return;if(e.key==\'Escape\')closeLB();if(e.key==\'ArrowLeft\')navLB(-1);if(e.key==\'ArrowRight\')navLB(1);});<\/script></body></html>';
+'document.addEventListener(\'DOMContentLoaded\',()=>{let sl=document.getElementById(\'lbZoom\'), rs=document.getElementById(\'lbResizer\'), im=document.getElementById(\'lbImg\'); if(sl){sl.addEventListener(\'input\',e=>updZ(parseInt(e.target.value)));} if(im){im.addEventListener(\'wheel\',e=>{e.preventDefault(); updZ(lbZ+(e.deltaY>0?-10:10));},{passive:false}); im.addEventListener(\'mousedown\',e=>{lbDrag=true; lbSX=e.clientX-lbTX; lbSY=e.clientY-lbTY; e.preventDefault();});} if(rs){rs.addEventListener(\'mousedown\',e=>{let sx=e.clientX, sy=e.clientY, sv=lbZ; function mv(ev){updZ(sv+Math.round(((ev.clientX-sx)+(ev.clientY-sy))/2));} function up(){document.removeEventListener(\'mousemove\',mv); document.removeEventListener(\'mouseup\',up);} document.addEventListener(\'mousemove\',mv); document.addEventListener(\'mouseup\',up); e.preventDefault(); e.stopPropagation();});} window.addEventListener(\'mousemove\',e=>{if(!lbDrag) return; lbTX=e.clientX-lbSX; lbTY=e.clientY-lbSY; let im=document.getElementById(\'lbImg\'); if(im) im.style.transform=\'scale(\'+(lbZ/100)+\') translate(\'+lbTX+\'px,\'+lbTY+\'px)\';}); window.addEventListener(\'mouseup\',()=>{lbDrag=false;});});'+
+'document.addEventListener(\'keydown\',e=>{let lb=document.getElementById(\'lb\');if(!lb.classList.contains(\'on\'))return;if(e.key==\'Escape\')closeLB();if(e.key==\'ArrowLeft\')navLB(-1);if(e.key==\'ArrowRight\')navLB(1); if(e.key==\'+\'||e.key==\'=\') updZ(lbZ+10); if(e.key==\'-\') updZ(lbZ-10); if(e.key==\'0\') updZ(100);});<\/script></body></html>';
   let blob=new Blob([html],{type:'text/html'}); let url=URL.createObjectURL(blob); let a=document.createElement('a'); a.href=url; a.download='Keptarolo_'+PROJECTS.length+'db_'+new Date().toISOString().slice(0,10)+'.html'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
-window.deleteAllProjects=async function(){if(!confirm('Törlöd az összes képet?'))return;PROJECTS=[];curIndex=-1;document.getElementById('previewImg').style.display='none';document.getElementById('previewPlaceholder').style.display='block';render();await saveAll();try{indexedDB.deleteDatabase(DB_NAME);}catch(e){} updateStorageBar();};
+
+window.deleteAllProjects=async function(){
+  if(!confirm('Törlöd az összes képet? ('+PROJECTS.length+' db)')) return;
+  PROJECTS=[]; curIndex=-1; colorFilter=null;
+  try{ document.getElementById('previewImg').style.display='none'; document.getElementById('previewPlaceholder').style.display='block'; document.getElementById('previewName').textContent=''; document.getElementById('previewSize').textContent=''; document.getElementById('previewLabel').textContent='Törölve ✓'; }catch(e){}
+  render(); renderColorLegend(); await saveAll();
+  try{ let delReq=indexedDB.deleteDatabase(DB_NAME); }catch(e){}
+  updateStorageBar();
+  document.getElementById('status').textContent='🗑️ Minden törölve - 0 db - színek megmaradtak ✓';
+};
+
 
 async function processFiles(files){
   let added=0;
@@ -352,6 +434,60 @@ document.getElementById('fileImportJson').addEventListener('change',async e=>{
  e.target.value='';
 });
 
+
+document.getElementById('fileImportHtml').addEventListener('change', async e=>{
+  let file=e.target.files[0]; if(!file) return;
+  try{
+    let txt=await file.text();
+    let added=0;
+    let m = txt.match(/let\s+L\s*=\s*(\[.*?\]);/s);
+    if(!m) m = txt.match(/let\s+L\s*=\s*(\[.*\])\s*;function/s);
+    let arr=[];
+    if(m){
+      try{ arr = JSON.parse(m[1]); }catch(err){ console.log('L parse hiba', err); }
+    }
+    if(arr && arr.length>0){
+      arr.forEach(p=>{
+        if(!p.d && !p.dataUrl) return;
+        let dataUrl = p.d || p.dataUrl;
+        if(getTotalSize()+ (dataUrl.length*0.75) > MAX_STORAGE) return;
+        PROJECTS.push({
+          sorszam:PROJECTS.length+1,
+          name:p.n||p.name||('image_'+(PROJECTS.length+1)+'.png'),
+          type:'image/png',
+          size:p.s||'?',
+          sizeBytes:0,
+          color:normHex(p.c||p.color||'#00ff00'),
+          width:p.w||p.width||0,
+          height:p.h||p.height||0,
+          dataUrl:dataUrl,
+          date:new Date().toISOString()
+        });
+        added++;
+      });
+    } else {
+      let regex = /src="(data:image\/[^"]+)"/g, match; let seen=new Set();
+      while((match=regex.exec(txt))!==null){
+        let dataUrl=match[1]; if(seen.has(dataUrl)) continue; seen.add(dataUrl);
+        if(getTotalSize()+ (dataUrl.length*0.75) > MAX_STORAGE) break;
+        let name='import_'+(added+1)+'.png';
+        let snippet=txt.substring(Math.max(0,match.index-400), match.index+400);
+        let nm=snippet.match(/download="([^"]+)"/); if(nm) name=nm[1];
+        PROJECTS.push({sorszam:PROJECTS.length+1, name:name, type:'image/png', size:(dataUrl.length*0.75/1024).toFixed(1)+' kB', sizeBytes:0, color:'#00ff00', width:0, height:0, dataUrl:dataUrl, date:new Date().toISOString()});
+        added++;
+      }
+    }
+    if(added>0){
+      render(); renderColorLegend(); await saveAll(); updateStorageBar();
+      alert(added+' db kép HTML-ből importálva ✓\n'+file.name);
+      document.getElementById('status').textContent='✅ HTML IMPORT: '+added+' db - '+file.name;
+      if(curIndex===-1) showPreview(0);
+    } else { alert('Nem találtam képet ebben a HTML-ben!'); }
+  }catch(err){ alert('HTML import hiba: '+err.message); }
+  e.target.value='';
+});
+
+
 document.getElementById('panelSlider').addEventListener('input',e=>{document.documentElement.style.setProperty('--panel-w',e.target.value+'px');document.getElementById('panelBadge').textContent=e.target.value+'px';});
 document.getElementById('previewSlider').addEventListener('input',e=>{document.getElementById('previewBadge').textContent=e.target.value+'%'; document.getElementById('previewFrame').style.zoom=e.target.value+'%';});
 
@@ -362,6 +498,53 @@ document.getElementById('previewSlider').addEventListener('input',e=>{document.g
  else{PROJECTS=[]; render(); document.getElementById('status').textContent='Üres képtároló - tölts fel képeket 📸 - 8 szín felül szerkeszthető ✏️';}
  updateStorageBar(); renderColorLegend();
 })();
+
+// === DISCORD UPLOAD ===
+function saveWebhook(){
+  var url = document.getElementById('discordWebhook').value.trim();
+  if(!url){ alert('Add meg a webhook URL-t!'); return; }
+  localStorage.setItem('discord_webhook_url', url);
+  document.getElementById('discordStatus').textContent='✅ Webhook mentve!';
+}
+(function(){ try{ var s=localStorage.getItem('discord_webhook_url'); if(s) setTimeout(function(){ var i=document.getElementById('discordWebhook'); if(i) i.value=s; },800); }catch(e){} })();
+function dataURLtoBlob(dataurl){
+  var arr=dataurl.split(','), mime=arr[0].match(/:(.*?);/)[1], bstr=atob(arr[1]), n=bstr.length, u8arr=new Uint8Array(n);
+  while(n--){ u8arr[n]=bstr.charCodeAt(n); } return new Blob([u8arr], {type:mime});
+}
+async function uploadToDiscordBlob(blob, filename, content){
+  var webhook=(document.getElementById('discordWebhook').value||localStorage.getItem('discord_webhook_url')||'').trim();
+  if(!webhook){ alert('Nincs webhook!'); return false; }
+  var statusEl=document.getElementById('discordStatus');
+  var proxies=['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
+  for(var pi=0; pi<proxies.length; pi++){
+    var url=proxies[pi]?proxies[pi]+encodeURIComponent(webhook):webhook;
+    try{
+      statusEl.textContent='⏳ Próbálkozás '+(pi+1)+'/'+proxies.length+': '+filename;
+      var form=new FormData(); form.append('file', blob, filename); if(content) form.append('payload_json', JSON.stringify({content:content}));
+      var resp=await fetch(url,{method:'POST', body:form});
+      if(resp.ok||resp.status==200||resp.status==204){ statusEl.textContent='✅ SIKER! '+filename+' → Discord #képek-upload!'; return true; }
+    }catch(e){ console.log(e); }
+  }
+  statusEl.textContent='❌ Böngésző blokkolja. HASZNÁLD: SÁRGA Letöltés gomb → húzd be Discordba!';
+  return false;
+}
+async function uploadCurrentToDiscord(){
+  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet bal oldalt!'); return; }
+  var p=PROJECTS[curIndex]; var blob=dataURLtoBlob(p.dataUrl); await uploadToDiscordBlob(blob,p.name,'📸 '+p.name);
+}
+function downloadCurrentImage(){
+  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet!'); return; }
+  var p=PROJECTS[curIndex]; var a=document.createElement('a'); a.href=p.dataUrl; a.download=p.name; a.click();
+  document.getElementById('discordStatus').textContent='⬇️ Letöltve: '+p.name+' → Húzd be Discord #képek-upload-ba!';
+}
+async function copyImageToClipboard(){
+  try{
+    var p=PROJECTS[curIndex]; var blob=dataURLtoBlob(p.dataUrl);
+    await navigator.clipboard.write([new ClipboardItem({[blob.type]:blob})]);
+    document.getElementById('discordStatus').textContent='📋 Vágólapra! Discordban Ctrl+V!';
+  }catch(e){ alert('Használd a Letöltést!'); }
+}
+function uploadAllToDiscord(){}
 </script>
 </body>
 </html>
