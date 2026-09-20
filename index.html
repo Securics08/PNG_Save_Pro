@@ -63,9 +63,31 @@ async function uploadToDiscordBlob(blob, filename, content){
   return false;
 }
 async function uploadCurrentToDiscord(){
-  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet bal oldalt!'); return; }
+  // JAVÍTÁS: ha van kijelölés, akkor a kijelölteket töltse fel, ne csak a legfelsőt
+  if(selectedIndices && selectedIndices.size>0){
+    let indices = Array.from(selectedIndices).sort((a,b)=>a-b);
+    if(!confirm(indices.length+' db kijelölt kép feltöltése Discordra?')) return;
+    let okCount=0, failCount=0;
+    for(let idx of indices){
+      let p=PROJECTS[idx];
+      if(!p) continue;
+      try{
+        let blob=dataURLtoBlob(p.dataUrl);
+        let ok=await uploadToDiscordBlob(blob,p.name,'📸 '+p.name+' ('+(okCount+failCount+1)+'/'+indices.length+')');
+        if(ok) okCount++; else failCount++;
+        // kis szünet hogy ne spam-elje a Discord webhook-ot (rate limit)
+        await new Promise(r=>setTimeout(r, 1200));
+      }catch(e){ failCount++; console.log('Discord upload hiba', p.name, e); }
+    }
+    document.getElementById('discordStatus').textContent='✅ KÉSZ! '+okCount+' siker, '+failCount+' hiba | Összes: '+indices.length+' db kijelölt';
+    return;
+  }
+  // ha nincs kijelölés, marad a régi működés: aktuális kép
+  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet bal oldalt, vagy jelölj ki többet!'); return; }
   var p=PROJECTS[curIndex]; var blob=dataURLtoBlob(p.dataUrl); await uploadToDiscordBlob(blob,p.name,'📸 '+p.name);
 }
+function uploadSelectedToDiscord(){ return uploadCurrentToDiscord(); }
+function uploadAllToDiscord(){ return uploadCurrentToDiscord(); }
 function downloadCurrentImage(){
   if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet!'); return; }
   var p=PROJECTS[curIndex]; var a=document.createElement('a'); a.href=p.dataUrl; a.download=p.name; a.click();
@@ -78,7 +100,7 @@ async function copyImageToClipboard(){
     document.getElementById('discordStatus').textContent='📋 Vágólapra! Discordban Ctrl+V!';
   }catch(e){ alert('Használd a Letöltést!'); }
 }
-function uploadAllToDiscord(){}
+function uploadAllToDiscord(){ return uploadCurrentToDiscord(); }
 </script>
 </head>
 <body>
@@ -629,9 +651,31 @@ async function uploadToDiscordBlob(blob, filename, content){
   return false;
 }
 async function uploadCurrentToDiscord(){
-  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet bal oldalt!'); return; }
+  // JAVÍTÁS: ha van kijelölés, akkor a kijelölteket töltse fel, ne csak a legfelsőt
+  if(selectedIndices && selectedIndices.size>0){
+    let indices = Array.from(selectedIndices).sort((a,b)=>a-b);
+    if(!confirm(indices.length+' db kijelölt kép feltöltése Discordra?')) return;
+    let okCount=0, failCount=0;
+    for(let idx of indices){
+      let p=PROJECTS[idx];
+      if(!p) continue;
+      try{
+        let blob=dataURLtoBlob(p.dataUrl);
+        let ok=await uploadToDiscordBlob(blob,p.name,'📸 '+p.name+' ('+(okCount+failCount+1)+'/'+indices.length+')');
+        if(ok) okCount++; else failCount++;
+        // kis szünet hogy ne spam-elje a Discord webhook-ot (rate limit)
+        await new Promise(r=>setTimeout(r, 1200));
+      }catch(e){ failCount++; console.log('Discord upload hiba', p.name, e); }
+    }
+    document.getElementById('discordStatus').textContent='✅ KÉSZ! '+okCount+' siker, '+failCount+' hiba | Összes: '+indices.length+' db kijelölt';
+    return;
+  }
+  // ha nincs kijelölés, marad a régi működés: aktuális kép
+  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet bal oldalt, vagy jelölj ki többet!'); return; }
   var p=PROJECTS[curIndex]; var blob=dataURLtoBlob(p.dataUrl); await uploadToDiscordBlob(blob,p.name,'📸 '+p.name);
 }
+function uploadSelectedToDiscord(){ return uploadCurrentToDiscord(); }
+function uploadAllToDiscord(){ return uploadCurrentToDiscord(); }
 function downloadCurrentImage(){
   if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet!'); return; }
   var p=PROJECTS[curIndex]; var a=document.createElement('a'); a.href=p.dataUrl; a.download=p.name; a.click();
@@ -644,7 +688,7 @@ async function copyImageToClipboard(){
     document.getElementById('discordStatus').textContent='📋 Vágólapra! Discordban Ctrl+V!';
   }catch(e){ alert('Használd a Letöltést!'); }
 }
-function uploadAllToDiscord(){}
+function uploadAllToDiscord(){ return uploadCurrentToDiscord(); }
 </script>
 </body>
 </html>
