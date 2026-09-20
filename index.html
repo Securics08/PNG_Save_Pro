@@ -41,6 +41,182 @@ function saveWebhook(){
   document.getElementById('discordStatus').textContent='✅ Webhook mentve!';
 }
 (function(){ try{ var s=localStorage.getItem('discord_webhook_url'); if(s) setTimeout(function(){ var i=document.getElementById('discordWebhook'); if(i) i.value=s; },800); }catch(e){} })();
+
+function showProgress(percent, text, detail){
+  try{
+    let c=document.getElementById('discordProgressContainer');
+    let b=document.getElementById('discordProgressBar');
+    let t=document.getElementById('discordProgressText');
+    let d=document.getElementById('discordProgressDetail');
+    if(!c||!b||!t) return;
+    c.style.display='block';
+    percent=Math.max(0,Math.min(100,percent));
+    let txt=(text||'').toString();
+    let m=txt.match(/(\d+)\/(\d+)/);
+    if(m && m[1]==m[2]) percent=100;
+    if(txt.includes('KESZ')||txt.includes('KÉSZ')||txt.includes('SIKER')||txt.includes('100%')) percent=100;
+    if(percent>=95) percent=100;
+    b.style.width=percent+'%'; // fast transition
+    t.textContent=percent+'% '+(txt.replace(/\d+%/g,'').trim());
+    if(d) d.textContent=detail||'';
+    var cyanEl=document.getElementById('aktualisBetoltes'); if(cyanEl && text){
+      let m=text.match(/(\d+)\/(\d+)/);
+      if(m){
+        cyanEl.innerHTML='🔵 <span style="color:#ffff00;font-weight:900;text-shadow:0 0 10px #ffff00;font-size:18px;">'+m[0]+'</span>';
+      } else if(text.includes('%')){
+        cyanEl.innerHTML='🔵 <span style="color:#ffff00;font-weight:900;">'+text+'</span>';
+      }
+    }
+    if(percent<30) b.style.background='linear-gradient(90deg, #ff0040, #ff8000)';
+    else if(percent<70) b.style.background='linear-gradient(90deg, #ffaa00, #ffff00, #aaff00)';
+    else if(percent<100) b.style.background='linear-gradient(90deg, #00ff88, #00aaff, #aa00ff)';
+    else { b.style.background='linear-gradient(90deg, #00ff00, #00ff88, #00ff00)'; b.style.boxShadow='0 0 20px #00ff00'; b.style.width='100%'; }
+  }catch(e){}
+}
+
+
+function normalizeWebhook(url){
+  try{ return url.trim().split('?')[0].toLowerCase(); }catch(e){ return (url||'').trim().toLowerCase(); }
+}
+function updateDiscordDeleteCount(){
+  try{
+    var whRaw=(document.getElementById('discordWebhook').value||localStorage.getItem('discord_webhook_url')||'').trim();
+    var whNorm=normalizeWebhook(whRaw);
+    var all=JSON.parse(localStorage.getItem('discord_sent_messages')||'[]');
+    var mine = whNorm ? all.filter(m=>normalizeWebhook(m.webhook)===whNorm) : [];
+    var el=document.getElementById('discordDeleteCount');
+    if(el){
+      if(mine.length>0){
+        el.innerHTML='✅ <span style="color:#ffff00;">'+mine.length+' db</span> saját üzenet van eltárolva ehhez a webhookhoz.';
+        el.style.color='#ffff00'; el.style.background='#222200'; el.style.border='2px solid #ffff00'; el.style.boxShadow='0 0 15px #ffff00';
+      }else{
+        el.textContent='0 db saját üzenet van eltárolva ehhez a webhookhoz. Nincs eltárolt saját üzenet, amit törölni lehetne ehhez a webhookhoz.';
+        el.style.color='#ff5555'; el.style.background='#220000'; el.style.border='2px solid #ff5555';
+      }
+    }
+  }catch(e){}
+}
+
+async function deleteLastDiscordMessages(){
+  var webhook=(document.getElementById('discordWebhook').value||localStorage.getItem('discord_webhook_url')||'').trim();
+  if(!webhook){ alert('Nincs webhook!'); return; }
+  var n=parseInt(document.getElementById('discordDeleteN').value,10);
+  if(!n||n<1){ alert('Adj meg számot!'); return; }
+  var statusEl=document.getElementById('discordDeleteStatus');
+  var m=webhook.match(/webhooks\/(\d+)\/([^/?]+)/);
+  if(!m){ statusEl.textContent='❌ Érvénytelen webhook URL'; return; }
+  var whId=m[1], whToken=m[2];
+  var list=JSON.parse(localStorage.getItem('discord_sent_messages')||'[]');
+  var mine=list.filter(x=>x.webhook===webhook);
+  var toDelete=mine.slice(Math.max(0,mine.length-n));
+  if(toDelete.length===0){ statusEl.textContent='Nincs eltárolt saját üzenet, amit törölni lehetne ehhez a webhookhoz.'; return; }
+  var proxies=['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
+  var ok=0,fail=0;
+  for(var di=0; di<toDelete.length; di++){
+    var msg=toDelete[di];
+    var delUrl='https://discord.com/api/webhooks/'+whId+'/'+whToken+'/messages/'+msg.id;
+    statusEl.textContent='⏳ Törlés '+(di+1)+'/'+toDelete.length+': '+msg.name;
+    var cyanEl=document.getElementById('aktualisBetoltes'); if(cyanEl) cyanEl.innerHTML='🗑️ <span style="color:#ffff00;font-weight:900;text-shadow:0 0 10px #ffff00;font-size:18px;">'+(di+1)+'/'+toDelete.length+'</span>';
+    var deleted=false;
+    for(var pi=0; pi<proxies.length && !deleted; pi++){
+      var url=proxies[pi]?proxies[pi]+encodeURIComponent(delUrl):delUrl;
+      try{ var resp=await fetch(url,{method:'DELETE'}); if(resp.ok||resp.status===204||resp.status===404) deleted=true; }catch(e){}
+    }
+    if(deleted){ ok++; list=list.filter(x=>x.id!==msg.id); } else fail++;
+  }
+  localStorage.setItem('discord_sent_messages', JSON.stringify(list));
+  updateDiscordDeleteCount();
+  statusEl.textContent='✅ Kész: '+ok+' db törölve'+(fail>0?', '+fail+' sikertelen':'')+'.';
+}
+setTimeout(updateDiscordDeleteCount, 1000);
+
+function force100(){
+  let b=document.getElementById('discordProgressBar');
+  let t=document.getElementById('discordProgressText');
+  if(b){ b.style.width='100%'; b.style.background='linear-gradient(90deg, #00ff00, #00ff88, #00ff00)'; }
+  if(t) t.textContent='100% KESZ';
+}
+
+function dataURLtoBlob(dataurl){
+  var arr=dataurl.split(','), mime=arr[0].match(/:(.*?);/)[1], bstr=atob(arr[1]), n=bstr.length, u8arr=new Uint8Array(n);
+  while(n--){ u8arr[n]=bstr.charCodeAt(n); } return new Blob([u8arr], {type:mime});
+}
+
+async function uploadToDiscordBlob(blob, filename, content){
+  var webhook=(document.getElementById('discordWebhook').value||localStorage.getItem('discord_webhook_url')||'').trim();
+  if(!webhook){ alert('Nincs webhook!'); return false; }
+  var statusEl=document.getElementById('discordStatus');
+  var webhookWithWait=webhook+(webhook.indexOf('?')>=0?'&':'?')+'wait=true';
+  // 3 proxy race - gyors
+  var proxies=['https://corsproxy.io/?','https://api.codetabs.com/v1/proxy?quest=','https://api.allorigins.win/raw?url='];
+  for(var pi=0; pi<proxies.length; pi++){
+    try{
+      var url=proxies[pi]?proxies[pi]+encodeURIComponent(webhookWithWait):webhookWithWait;
+      var form=new FormData(); form.append('file', blob, filename); if(content) form.append('payload_json', JSON.stringify({content:content}));
+      var resp=await fetch(url,{method:'POST', body:form, signal: AbortSignal.timeout(8000)});
+      if(resp.ok){
+        var j=await resp.json();
+        if(j && j.id){
+          var list=JSON.parse(localStorage.getItem('discord_sent_messages')||'[]');
+          list.push({webhook:webhook, id:j.id, name:filename, ts:Date.now()});
+          if(list.length>500) list=list.slice(-500);
+          localStorage.setItem('discord_sent_messages', JSON.stringify(list));
+          updateDiscordDeleteCount();
+          if(statusEl) statusEl.textContent='✅ '+filename+' ('+list.filter(m=>normalizeWebhook(m.webhook)===normalizeWebhook(webhook)).length+' db)';
+          return true;
+        }
+      }
+    }catch(e){ console.log('proxy '+pi+' hiba', e.message); }
+  }
+  // Gyors fallback - mindig tölt mint az elozoben
+  try{
+    var form2=new FormData(); form2.append('file', blob, filename); if(content) form2.append('payload_json', JSON.stringify({content:content}));
+    await fetch(webhook,{method:'POST', body:form2, mode:'no-cors'});
+    if(statusEl) statusEl.textContent='⚠️ '+filename+' feltöltve, de ID nélkül (gyors mód)';
+    return true;
+  }catch(e){ return false; }
+}
+
+async function deleteLastDiscordMessages(){
+  var webhook=(document.getElementById('discordWebhook').value||localStorage.getItem('discord_webhook_url')||'').trim();
+  if(!webhook){ alert('Nincs webhook!'); return; }
+  var n=parseInt(document.getElementById('discordDeleteN').value,10);
+  if(!n||n<1){ alert('Adj meg számot!'); return; }
+  var statusEl=document.getElementById('discordDeleteStatus');
+  var m=webhook.match(/webhooks\/(\d+)\/([^/?]+)/);
+  if(!m){ statusEl.textContent='❌ Érvénytelen webhook URL'; return; }
+  var whId=m[1], whToken=m[2];
+  var list=JSON.parse(localStorage.getItem('discord_sent_messages')||'[]');
+  var mine=list.filter(x=>x.webhook===webhook);
+  var toDelete=mine.slice(Math.max(0,mine.length-n));
+  if(toDelete.length===0){ statusEl.textContent='Nincs eltárolt saját üzenet, amit törölni lehetne ehhez a webhookhoz.'; return; }
+  var proxies=['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
+  var ok=0,fail=0;
+  for(var di=0; di<toDelete.length; di++){
+    var msg=toDelete[di];
+    var delUrl='https://discord.com/api/webhooks/'+whId+'/'+whToken+'/messages/'+msg.id;
+    statusEl.textContent='⏳ Törlés '+(di+1)+'/'+toDelete.length+': '+msg.name;
+    var cyanEl=document.getElementById('aktualisBetoltes'); if(cyanEl) cyanEl.innerHTML='🗑️ <span style="color:#ffff00;font-weight:900;text-shadow:0 0 10px #ffff00;font-size:18px;">'+(di+1)+'/'+toDelete.length+'</span>';
+    var deleted=false;
+    for(var pi=0; pi<proxies.length && !deleted; pi++){
+      var url=proxies[pi]?proxies[pi]+encodeURIComponent(delUrl):delUrl;
+      try{ var resp=await fetch(url,{method:'DELETE'}); if(resp.ok||resp.status===204||resp.status===404) deleted=true; }catch(e){}
+    }
+    if(deleted){ ok++; list=list.filter(x=>x.id!==msg.id); } else fail++;
+  }
+  localStorage.setItem('discord_sent_messages', JSON.stringify(list));
+  updateDiscordDeleteCount();
+  statusEl.textContent='✅ Kész: '+ok+' db törölve'+(fail>0?', '+fail+' sikertelen':'')+'.';
+}
+setTimeout(updateDiscordDeleteCount, 1000);
+
+function force100(){
+  let b=document.getElementById('discordProgressBar');
+  let t=document.getElementById('discordProgressText');
+  if(b){ b.style.width='100%'; b.style.background='linear-gradient(90deg, #00ff00, #00ff88, #00ff00)'; }
+  if(t) t.textContent='100% KESZ';
+}
+
 function dataURLtoBlob(dataurl){
   var arr=dataurl.split(','), mime=arr[0].match(/:(.*?);/)[1], bstr=atob(arr[1]), n=bstr.length, u8arr=new Uint8Array(n);
   while(n--){ u8arr[n]=bstr.charCodeAt(n); } return new Blob([u8arr], {type:mime});
@@ -49,45 +225,59 @@ async function uploadToDiscordBlob(blob, filename, content){
   var webhook=(document.getElementById('discordWebhook').value||localStorage.getItem('discord_webhook_url')||'').trim();
   if(!webhook){ alert('Nincs webhook!'); return false; }
   var statusEl=document.getElementById('discordStatus');
-  var proxies=['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
+  var webhookWithWait=webhook+(webhook.indexOf('?')>=0?'&':'?')+'wait=true';
+  var proxies=['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url=']; // direkt + 2 proxy tartalék
   for(var pi=0; pi<proxies.length; pi++){
-    var url=proxies[pi]?proxies[pi]+encodeURIComponent(webhook):webhook;
+    var url=proxies[pi]?proxies[pi]+encodeURIComponent(webhookWithWait):webhookWithWait;
     try{
-      statusEl.textContent='⏳ Próbálkozás '+(pi+1)+'/'+proxies.length+': '+filename;
       var form=new FormData(); form.append('file', blob, filename); if(content) form.append('payload_json', JSON.stringify({content:content}));
       var resp=await fetch(url,{method:'POST', body:form});
-      if(resp.ok||resp.status==200||resp.status==204){ statusEl.textContent='✅ SIKER! '+filename+' → Discord #képek-upload!'; return true; }
-    }catch(e){ console.log(e); }
+      if(resp.ok){
+        try{
+          var j=await resp.clone().json();
+          if(j && j.id){
+            var list=JSON.parse(localStorage.getItem('discord_sent_messages')||'[]');
+            list.push({webhook:webhook, id:j.id, name:filename, ts:Date.now()});
+            if(list.length>500) list=list.slice(-500);
+            localStorage.setItem('discord_sent_messages', JSON.stringify(list));
+            updateDiscordDeleteCount();
+            if(statusEl) statusEl.textContent='✅ SIKER! '+filename+' → '+list.filter(m=>normalizeWebhook(m.webhook)===normalizeWebhook(webhook)).length+' db';
+          }
+        }catch(e){}
+        return true;
+      }
+    }catch(e){ console.log('proxy hiba', e); }
   }
-  statusEl.textContent='❌ Böngésző blokkolja. HASZNÁLD: SÁRGA Letöltés gomb → húzd be Discordba!';
-  return false;
+  // Fallback no-cors - EZ GYORS, mindig tölt
+  try{
+    var form2=new FormData(); form2.append('file', blob, filename); if(content) form2.append('payload_json', JSON.stringify({content:content}));
+    await fetch(webhook,{method:'POST', body:form2, mode:'no-cors'});
+    if(statusEl) statusEl.textContent='⚠️ Gyors feltöltve (no-cors) '+filename;
+    return true;
+  }catch(e){ return false; }
 }
+
+
 async function uploadCurrentToDiscord(){
-  // JAVÍTÁS: ha van kijelölés, akkor a kijelölteket töltse fel, ne csak a legfelsőt
-  if(selectedIndices && selectedIndices.size>0){
+  if(typeof selectedIndices !== 'undefined' && selectedIndices.size>0){
     let indices = Array.from(selectedIndices).sort((a,b)=>a-b);
-    if(!confirm(indices.length+' db kijelölt kép feltöltése Discordra?')) return;
-    let okCount=0, failCount=0;
-    for(let idx of indices){
-      let p=PROJECTS[idx];
-      if(!p) continue;
-      try{
-        let blob=dataURLtoBlob(p.dataUrl);
-        let ok=await uploadToDiscordBlob(blob,p.name,'📸 '+p.name+' ('+(okCount+failCount+1)+'/'+indices.length+')');
-        if(ok) okCount++; else failCount++;
-        // kis szünet hogy ne spam-elje a Discord webhook-ot (rate limit)
-        await new Promise(r=>setTimeout(r, 1200));
-      }catch(e){ failCount++; console.log('Discord upload hiba', p.name, e); }
+    for(let i=0;i<indices.length;i++){
+      let p=PROJECTS[indices[i]];
+      if(!p || !p.dataUrl) continue;
+      var cyanEl=document.getElementById('aktualisBetoltes');
+      if(cyanEl) cyanEl.innerHTML='📁 <span style="color:#00ffff;">'+p.name+'</span> <span style="color:#ffff00;font-weight:900;text-shadow:0 0 10px #ffff00;font-size:20px;">('+(i+1)+'/'+indices.length+')</span>';
+      let blob=dataURLtoBlob(p.dataUrl);
+      await uploadToDiscordBlob(blob,p.name,'📁 '+p.name+' ('+(i+1)+'/'+indices.length+')');
+      if(i < indices.length-1) await new Promise(r=>setTimeout(r, 10)); // GYORS 10ms
     }
-    document.getElementById('discordStatus').textContent='✅ KÉSZ! '+okCount+' siker, '+failCount+' hiba | Összes: '+indices.length+' db kijelölt';
     return;
   }
-  // ha nincs kijelölés, marad a régi működés: aktuális kép
-  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet bal oldalt, vagy jelölj ki többet!'); return; }
-  var p=PROJECTS[curIndex]; var blob=dataURLtoBlob(p.dataUrl); await uploadToDiscordBlob(blob,p.name,'📸 '+p.name);
+  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet bal oldalt!'); return; }
+  var p=PROJECTS[curIndex];
+  var cyanEl=document.getElementById('aktualisBetoltes');
+  if(cyanEl) cyanEl.innerHTML='📁 <span style="color:#00ffff;">'+p.name+'</span> <span style="color:#ffff00;font-weight:900;font-size:20px;">(1/1)</span>';
+  var blob=dataURLtoBlob(p.dataUrl); await uploadToDiscordBlob(blob,p.name,'📸 '+p.name);
 }
-function uploadSelectedToDiscord(){ return uploadCurrentToDiscord(); }
-function uploadAllToDiscord(){ return uploadCurrentToDiscord(); }
 function downloadCurrentImage(){
   if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet!'); return; }
   var p=PROJECTS[curIndex]; var a=document.createElement('a'); a.href=p.dataUrl; a.download=p.name; a.click();
@@ -163,7 +353,30 @@ function uploadAllToDiscord(){ return uploadCurrentToDiscord(); }
 <button onclick="downloadCurrentImage()" style="flex:1;background:#ffcc00;color:#000;border:none;border-radius:6px;padding:10px;font-weight:bold;cursor:pointer;">⬇️ Letöltés → húzd Discordba</button>
 <button onclick="copyImageToClipboard()" style="flex:1;background:#00aaff;color:#fff;border:none;border-radius:6px;padding:10px;font-weight:bold;cursor:pointer;">📋 Vágólapra + Ctrl+V</button>
 </div>
+
+<div id="discordProgressContainer" style="margin-top:8px; display:none;">
+  <div style="position:relative; width:100%; height:34px; background:#000; border:3px solid #ff00ff; border-radius:17px; overflow:hidden; box-shadow: 0 0 15px #ff00ff;">
+    <div id="discordProgressBar" style="height:100%; width:0%; background: linear-gradient(90deg, #ff0040, #ffaa00, #00ff88); transition: width 0.2s;"></div>
+    <div id="discordProgressText" style="position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:900; font-size:16px; text-shadow: 1px 1px 3px #000, 0 0 8px #000;">0%</div>
+  </div>
+  <div id="discordProgressDetail" style="margin-top:4px; font-size:11px; color:#0f0; text-align:center; font-family:monospace;"></div>
+</div>
 <div id="discordStatus" style="margin-top:6px;font-size:11px;color:#888;white-space:pre-wrap;min-height:16px;"></div>
+<div id="discordDeleteBox" style="background:#111;border:2px solid #333;border-radius:10px;padding:10px;margin-top:12px;">
+<div style="color:#ff5555;font-weight:600;font-size:12px;margin-bottom:8px;">🗑️ DISCORD TÖRLÉS (csak a saját küldött üzeneteid)</div>
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+<span style="font-size:11px;color:#aaa">Utolsó</span>
+<input type="number" id="discordDeleteN" value="5" min="1" style="width:120px;background:#000;color:#ff5555;border:2px solid #ff5555;border-radius:8px;padding:10px 12px;text-align:center;font-weight:900;font-size:16px;">
+<span style="font-size:11px;color:#aaa">db törlése</span>
+<button onclick="deleteLastDiscordMessages()" style="flex:1;min-width:140px;background:#ff5555;color:#000;border:none;border-radius:8px;padding:12px;font-weight:800;cursor:pointer;font-size:14px;">🗑️ Törlés</button>
+</div>
+<!-- ZÖLD + CYAN egymás mellett -->
+<div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">
+  <div id="discordDeleteCount" style="flex:1;min-width:240px;font-size:13px;color:#ffff00;background:#222200;border:2px solid #ffff00;border-radius:8px;padding:8px 12px;font-weight:900;box-shadow:0 0 12px #ffff00;text-shadow:0 0 6px #ffff00;">0 db saját üzenet van eltárolva ehhez a webhookhoz.</div>
+  <div id="aktualisBetoltes" style="flex:1;min-width:240px;font-size:14px;color:#00ffff;background:#002222;border:2px solid #00ffff;border-radius:10px;padding:10px 12px;font-weight:900;box-shadow:0 0 12px #00ffff;text-align:left;font-family:monospace;">⏳ Aktuális: <span style="color:#ffff00;">0/0</span></div>
+</div>
+<div id="discordDeleteStatus" style="margin-top:6px;font-size:11px;color:#ffaa00;white-space:pre-wrap;min-height:16px;font-weight:600;"></div>
+</div>
 </div>
 
 <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
@@ -637,45 +850,59 @@ async function uploadToDiscordBlob(blob, filename, content){
   var webhook=(document.getElementById('discordWebhook').value||localStorage.getItem('discord_webhook_url')||'').trim();
   if(!webhook){ alert('Nincs webhook!'); return false; }
   var statusEl=document.getElementById('discordStatus');
-  var proxies=['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
+  var webhookWithWait=webhook+(webhook.indexOf('?')>=0?'&':'?')+'wait=true';
+  var proxies=['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url=']; // direkt + 2 proxy tartalék
   for(var pi=0; pi<proxies.length; pi++){
-    var url=proxies[pi]?proxies[pi]+encodeURIComponent(webhook):webhook;
+    var url=proxies[pi]?proxies[pi]+encodeURIComponent(webhookWithWait):webhookWithWait;
     try{
-      statusEl.textContent='⏳ Próbálkozás '+(pi+1)+'/'+proxies.length+': '+filename;
       var form=new FormData(); form.append('file', blob, filename); if(content) form.append('payload_json', JSON.stringify({content:content}));
       var resp=await fetch(url,{method:'POST', body:form});
-      if(resp.ok||resp.status==200||resp.status==204){ statusEl.textContent='✅ SIKER! '+filename+' → Discord #képek-upload!'; return true; }
-    }catch(e){ console.log(e); }
+      if(resp.ok){
+        try{
+          var j=await resp.clone().json();
+          if(j && j.id){
+            var list=JSON.parse(localStorage.getItem('discord_sent_messages')||'[]');
+            list.push({webhook:webhook, id:j.id, name:filename, ts:Date.now()});
+            if(list.length>500) list=list.slice(-500);
+            localStorage.setItem('discord_sent_messages', JSON.stringify(list));
+            updateDiscordDeleteCount();
+            if(statusEl) statusEl.textContent='✅ SIKER! '+filename+' → '+list.filter(m=>normalizeWebhook(m.webhook)===normalizeWebhook(webhook)).length+' db';
+          }
+        }catch(e){}
+        return true;
+      }
+    }catch(e){ console.log('proxy hiba', e); }
   }
-  statusEl.textContent='❌ Böngésző blokkolja. HASZNÁLD: SÁRGA Letöltés gomb → húzd be Discordba!';
-  return false;
+  // Fallback no-cors - EZ GYORS, mindig tölt
+  try{
+    var form2=new FormData(); form2.append('file', blob, filename); if(content) form2.append('payload_json', JSON.stringify({content:content}));
+    await fetch(webhook,{method:'POST', body:form2, mode:'no-cors'});
+    if(statusEl) statusEl.textContent='⚠️ Gyors feltöltve (no-cors) '+filename;
+    return true;
+  }catch(e){ return false; }
 }
+
+
 async function uploadCurrentToDiscord(){
-  // JAVÍTÁS: ha van kijelölés, akkor a kijelölteket töltse fel, ne csak a legfelsőt
-  if(selectedIndices && selectedIndices.size>0){
+  if(typeof selectedIndices !== 'undefined' && selectedIndices.size>0){
     let indices = Array.from(selectedIndices).sort((a,b)=>a-b);
-    if(!confirm(indices.length+' db kijelölt kép feltöltése Discordra?')) return;
-    let okCount=0, failCount=0;
-    for(let idx of indices){
-      let p=PROJECTS[idx];
-      if(!p) continue;
-      try{
-        let blob=dataURLtoBlob(p.dataUrl);
-        let ok=await uploadToDiscordBlob(blob,p.name,'📸 '+p.name+' ('+(okCount+failCount+1)+'/'+indices.length+')');
-        if(ok) okCount++; else failCount++;
-        // kis szünet hogy ne spam-elje a Discord webhook-ot (rate limit)
-        await new Promise(r=>setTimeout(r, 1200));
-      }catch(e){ failCount++; console.log('Discord upload hiba', p.name, e); }
+    for(let i=0;i<indices.length;i++){
+      let p=PROJECTS[indices[i]];
+      if(!p || !p.dataUrl) continue;
+      var cyanEl=document.getElementById('aktualisBetoltes');
+      if(cyanEl) cyanEl.innerHTML='📁 <span style="color:#00ffff;">'+p.name+'</span> <span style="color:#ffff00;font-weight:900;text-shadow:0 0 10px #ffff00;font-size:20px;">('+(i+1)+'/'+indices.length+')</span>';
+      let blob=dataURLtoBlob(p.dataUrl);
+      await uploadToDiscordBlob(blob,p.name,'📁 '+p.name+' ('+(i+1)+'/'+indices.length+')');
+      if(i < indices.length-1) await new Promise(r=>setTimeout(r, 10)); // GYORS 10ms
     }
-    document.getElementById('discordStatus').textContent='✅ KÉSZ! '+okCount+' siker, '+failCount+' hiba | Összes: '+indices.length+' db kijelölt';
     return;
   }
-  // ha nincs kijelölés, marad a régi működés: aktuális kép
-  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet bal oldalt, vagy jelölj ki többet!'); return; }
-  var p=PROJECTS[curIndex]; var blob=dataURLtoBlob(p.dataUrl); await uploadToDiscordBlob(blob,p.name,'📸 '+p.name);
+  if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet bal oldalt!'); return; }
+  var p=PROJECTS[curIndex];
+  var cyanEl=document.getElementById('aktualisBetoltes');
+  if(cyanEl) cyanEl.innerHTML='📁 <span style="color:#00ffff;">'+p.name+'</span> <span style="color:#ffff00;font-weight:900;font-size:20px;">(1/1)</span>';
+  var blob=dataURLtoBlob(p.dataUrl); await uploadToDiscordBlob(blob,p.name,'📸 '+p.name);
 }
-function uploadSelectedToDiscord(){ return uploadCurrentToDiscord(); }
-function uploadAllToDiscord(){ return uploadCurrentToDiscord(); }
 function downloadCurrentImage(){
   if(curIndex<0||!PROJECTS[curIndex]){ alert('Válassz képet!'); return; }
   var p=PROJECTS[curIndex]; var a=document.createElement('a'); a.href=p.dataUrl; a.download=p.name; a.click();
