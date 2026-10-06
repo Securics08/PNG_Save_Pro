@@ -771,7 +771,7 @@ window.previewProject=function(idx){
 function render(){
   let el=document.getElementById('list'); el.innerHTML='';
   let visible=[]; PROJECTS.forEach((p,i)=>{ if(!colorFilter || (p.color||'#00ffff').toLowerCase()===colorFilter.toLowerCase()) visible.push(i); });
-  visible.forEach((realIdx)=>{
+  visible.reverse(); visible.forEach((realIdx)=>{
     let p=PROJECTS[realIdx]; let idx=realIdx;
     let active=(curIndex===idx)?' active':'';
     let col=p.color||'#00ffff';
@@ -1028,5 +1028,270 @@ function syncActiveEffects(){
 })();
 </script>
 
+<script>
+/* ===== JAVÍTÁS: Effekt Mentés + Visszaállítás + Mentések lista ===== */
+(function(){
+'use strict';
+var EFF=["effect-glow","effect-neon","effect-gradient","effect-aurora","effect-mono","effect-serif","effect-space","effect-code","effect-tech","effect-script","effect-pixel","effect-rainbow","effect-shine","effect-pulse","effect-flicker","effect-glitch","effect-fire","effect-ice","effect-orbit","effect-scan","effect-holo","effect-stars"];
+var PFX='header_save_', SNAP='header_effect_saved';
+var $=function(id){return document.getElementById(id)};
+
+var st=document.createElement('style');
+st.textContent=
+'#hsToast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,16px);background:#0a0d12;border:1px solid #00ff00;color:#00ff00;padding:10px 18px;border-radius:12px;font:600 13px Geist,Arial,sans-serif;box-shadow:0 0 18px rgba(0,255,0,.35);opacity:0;pointer-events:none;transition:.22s;z-index:100000}'+
+'#hsToast.show{opacity:1;transform:translate(-50%,0)}'+
+'#saveDropdown{min-width:330px;padding:6px}'+
+'.hs-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:pointer;border:1px solid transparent}'+
+'.hs-item:hover{background:rgba(0,255,0,.08);border-color:rgba(0,255,0,.35)}'+
+'.hs-dot{width:12px;height:12px;border-radius:50%;flex:0 0 12px}'+
+'.hs-main{flex:1;min-width:0;display:flex;flex-direction:column}'+
+'.hs-main b{font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+'.hs-main small{font-size:10px;color:rgba(255,255,255,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+'.hs-btn{background:#0f1218;border:1px solid rgba(255,255,255,.14);color:#ccc;border-radius:8px;padding:4px 8px;cursor:pointer;font-size:12px}'+
+'.hs-btn:hover{border-color:#00ff00;color:#00ff00}'+
+'.hs-btn.del:hover{border-color:#ff4444;color:#ff4444}'+
+'.hs-empty{padding:12px;color:rgba(255,255,255,.55);font-size:12px}';
+document.head.appendChild(st);
+
+var tt;
+function toast(m){
+  var t=$('hsToast');
+  if(!t){t=document.createElement('div');t.id='hsToast';document.body.appendChild(t);}
+  t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(function(){t.classList.remove('show')},2400);
+}
+function effFromClass(s){return String(s||'').split(/\s+/).filter(function(c){return EFF.indexOf(c)!==-1})}
+function accent(){return (getComputedStyle(document.documentElement).getPropertyValue('--a')||'').trim()||'#00FF00'}
+function curPx(){
+  var p=localStorage.getItem('title_px');if(p)return p;
+  var fb=$('fontBtn'),m=fb&&(fb.textContent||'').match(/(\d+)\s*px/);
+  return m?m[1]:'29';
+}
+function curFont(){var s=$('fontSelect');return localStorage.getItem('custom_font')||(s&&s.value)||'Arial'}
+
+/* ---- állapot kiolvasása / alkalmazása ---- */
+function getState(){
+  var top=$('top'),title=$('title');
+  return {
+    v:2,
+    effects:effFromClass(top?top.className:''),
+    color:accent(),
+    titleHTML:title?title.innerHTML:'',
+    titleStyle:title?(title.getAttribute('style')||''):'',
+    font:curFont(),
+    px:curPx(),
+    date:new Date().toISOString()
+  };
+}
+function syncChips(){
+  var top=$('top'),line=$('effectsLine');if(!top||!line)return;
+  var bs=line.querySelectorAll('.eff-btn');
+  for(var i=0;i<EFF.length;i++){if(bs[i])bs[i].classList.toggle('active',top.classList.contains(EFF[i]))}
+}
+function updMirrorDots(){
+  var a=accent();
+  document.querySelectorAll('.header-mirror .dot').forEach(function(d){d.style.background=a;d.style.boxShadow='0 0 16px '+a});
+}
+function applyState(d,noSave){
+  if(!d||typeof d!=='object')return false;
+  var top=$('top'),title=$('title');if(!top)return false;
+  var want=d.effects||(d.className||d.cls!==undefined?effFromClass(d.className||d.cls):null);
+  if(want){EFF.forEach(function(c){top.classList.remove(c)});want.forEach(function(c){if(EFF.indexOf(c)!==-1)top.classList.add(c)});}
+  if(d.color&&typeof applyColor==='function')applyColor(d.color);
+  var t=(d.titleHTML!==undefined&&d.titleHTML!==null)?d.titleHTML:d.title;
+  if(typeof t==='string'&&title)title.innerHTML=t;
+  if(typeof d.titleStyle==='string'&&title)title.setAttribute('style',d.titleStyle);
+  if(d.font){var sel=$('fontSelect');if(sel){sel.value=d.font;if(sel.value===d.font&&typeof setFont==='function')setFont();}}
+  if(d.px){
+    var px=String(d.px).replace(/[^0-9]/g,'');
+    if(px){
+      localStorage.setItem('title_px',px);
+      document.documentElement.style.setProperty('--title-size',px+'px');
+      if(title)title.style.fontSize=px+'px';
+      var fb=$('fontBtn');if(fb)fb.textContent='🔤 Betű '+px+'px ▼';
+      if(typeof realMarkPx==='function')setTimeout(realMarkPx,50);
+    }
+  }
+  syncChips();
+  if(typeof syncActiveEffects==='function')syncActiveEffects();
+  updMirrorDots();
+  if(!noSave&&typeof saveHeaderState==='function')saveHeaderState();
+  return true;
+}
+
+/* ---- automatikus visszatöltés oldalbetöltéskor (F5) ---- */
+window.loadHeaderState=function(){
+  try{
+    var cls=localStorage.getItem('header_class');
+    applyState({
+      effects:cls!==null?effFromClass(cls):undefined,
+      color:localStorage.getItem('header_color')||undefined,
+      titleHTML:localStorage.getItem('header_title')||undefined,
+      font:localStorage.getItem('custom_font')||undefined,
+      px:localStorage.getItem('title_px')||undefined
+    },true);
+  }catch(e){console.error('loadHeaderState',e)}
+};
+
+/* ---- mentések ---- */
+function keys(){var a=[];for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf(PFX)===0)a.push(k)}return a}
+function putSnap(d){try{localStorage.setItem(SNAP,JSON.stringify(d))}catch(e){}}
+function summary(d){
+  var e=(d.effects||effFromClass(d.className||d.cls)).map(function(c){var n=c.replace('effect-','');return n.charAt(0).toUpperCase()+n.slice(1)});
+  var date=Date.parse(d.date)?new Date(d.date).toLocaleString('hu-HU',{dateStyle:'short',timeStyle:'short'}):'';
+  return (e.length?e.join(' + '):'alap')+(d.font?' • '+String(d.font).replace(' Bold',' B'):'')+(d.px?' • '+d.px+'px':'')+(date?' • '+date:'');
+}
+function renderList(){
+  var dd=$('saveDropdown'),btn=$('saveBtn');
+  var items=[];
+  keys().forEach(function(k){try{var d=JSON.parse(localStorage.getItem(k));if(d&&typeof d==='object')items.push({k:k,d:d})}catch(e){}});
+  items.sort(function(a,b){return (Date.parse(b.d.date)||0)-(Date.parse(a.d.date)||0)});
+  if(btn)btn.textContent='💾 Mentések ('+items.length+') ▼';
+  if(!dd)return;
+  dd.textContent='';
+  if(!items.length){var em=document.createElement('div');em.className='hs-empty';em.textContent='Nincs mentés – állíts be effekteket, majd: 💾 Effekt Mentés';dd.appendChild(em);return}
+  items.forEach(function(it){
+    var name=it.k.slice(PFX.length);
+    var row=document.createElement('div');row.className='hs-item';
+    var dot=document.createElement('span');dot.className='hs-dot';dot.style.background=it.d.color||'#00ff00';dot.style.boxShadow='0 0 8px '+(it.d.color||'#00ff00');
+    var main=document.createElement('span');main.className='hs-main';
+    var b=document.createElement('b');b.textContent=name;
+    var sm=document.createElement('small');sm.textContent=summary(it.d);
+    main.appendChild(b);main.appendChild(sm);
+    var ov=document.createElement('button');ov.className='hs-btn';ov.textContent='💾';ov.title='Felülírás a jelenlegi beállítással';
+    var del=document.createElement('button');del.className='hs-btn del';del.textContent='✕';del.title='Törlés';
+    row.appendChild(dot);row.appendChild(main);row.appendChild(ov);row.appendChild(del);
+    row.addEventListener('click',function(e){
+      e.stopPropagation();
+      if(applyState(it.d)){putSnap(it.d);dd.style.display='none';toast('✅ Betöltve: '+name)}
+    });
+    ov.addEventListener('click',function(e){
+      e.stopPropagation();
+      if(!confirm('Felülírod a(z) "'+name+'" mentést a jelenlegi effektekkel?'))return;
+      var s=getState();s.name=name;
+      try{localStorage.setItem(it.k,JSON.stringify(s));putSnap(s);renderList();toast('✅ Felülírva: '+name)}catch(err){toast('Mentés hiba: '+err.message)}
+    });
+    del.addEventListener('click',function(e){
+      e.stopPropagation();
+      if(!confirm('Törlöd: '+name+'?'))return;
+      localStorage.removeItem(it.k);renderList();
+    });
+    dd.appendChild(row);
+  });
+}
+function doSave(){
+  var def='Mentés_'+(keys().length+1);
+  var name=prompt('Add meg a mentés nevét:',def);
+  if(name===null)return;
+  name=name.trim()||def;
+  var key=PFX+name;
+  if(localStorage.getItem(key)&&!confirm('Már van "'+name+'" nevű mentés. Felülírod?'))return;
+  var s=getState();s.name=name;
+  try{
+    localStorage.setItem(key,JSON.stringify(s));
+    putSnap(s);
+    if(typeof saveHeaderState==='function')saveHeaderState();
+  }catch(e){toast('Mentés hiba: '+e.message);return}
+  renderList();
+  toast('✅ Effekt mentve: '+name);
+}
+function doRestore(){
+  var raw=localStorage.getItem(SNAP);
+  if(!raw){toast('Még nincs mentett effekt – előbb: 💾 Effekt Mentés');return}
+  var d;try{d=JSON.parse(raw)}catch(e){d=null}
+  if(!d||typeof d!=='object'){toast('A korábbi visszaállítási adat sérült – ments újra');return}
+  if(applyState(d))toast('↩️ Visszaállítva az utolsó mentett effektre'+(d.name?': '+d.name:''));
+}
+
+/* a régi függvények cseréje, hogy semmi ne írja felül */
+window.realLoadSaves=renderList;
+window.loadSaves=renderList;
+window.realDoSave=doSave;
+
+/* ---- gombok újrakötése (a régi, ütköző kezelők eltávolításával) ---- */
+function rebind(id){
+  var o=$(id);if(!o)return null;
+  var c=o.cloneNode(true);c.removeAttribute('onclick');
+  o.parentNode.replaceChild(c,o);return c;
+}
+function init(){
+  var eb=rebind('saveEffectBtn'),rb=rebind('restoreEffectBtn'),sb=rebind('saveBtn');
+  if(eb)eb.onclick=doSave;
+  if(rb)rb.onclick=doRestore;
+  if(sb)sb.onclick=function(e){
+    e.stopPropagation();
+    var dd=$('saveDropdown');if(!dd)return;
+    if(dd.style.display==='block'){dd.style.display='none';return}
+    renderList();
+    dd.style.display='block';dd.style.right='auto';
+    var r=sb.getBoundingClientRect();
+    dd.style.top=(r.bottom+6)+'px';
+    dd.style.left=Math.max(8,Math.min(r.left,window.innerWidth-dd.offsetWidth-8))+'px';
+  };
+  var line=$('effectsLine');
+  if(line)line.addEventListener('click',function(){setTimeout(syncChips,0)});
+  var rnd=$('randBtn');
+  if(rnd)rnd.addEventListener('click',function(){setTimeout(syncChips,0)});
+  var sw=$('swatch');
+  if(sw)sw.addEventListener('input',function(){setTimeout(updMirrorDots,0)});
+  syncChips();renderList();
+}
+if(document.readyState==='complete')setTimeout(init,0);
+else window.addEventListener('load',function(){setTimeout(init,0)});
+})();
+</script>
+
+
+<style id="v2-fix">
+#colorLegend{flex-wrap:nowrap!important;overflow-x:auto;overflow-y:visible;padding:10px 8px!important;gap:3px!important;scrollbar-width:none;min-width:0}
+#colorLegend::-webkit-scrollbar{display:none}
+#colorLegend .color-pill{flex:0 0 auto!important;padding:5px 9px!important;margin:2px!important;gap:5px!important;white-space:nowrap}
+#colorLegend .color-pill .color-pill-label{font-size:12px!important;letter-spacing:.3px!important}
+#colorLegend .color-pill>span:first-child{width:11px!important;height:11px!important}
+#colorLegend .color-pill.legend-btn-active-rainbow{transform:scale(1.12)!important;margin:2px 5px!important}
+#list{padding-bottom:90px}
+</style>
+<script id="v2-fix-js">
+(function(){
+  var FONTFX=["effect-mono","effect-serif","effect-space","effect-code","effect-tech","effect-script","effect-pixel"];
+  var flag=false;
+  function st(){var e=document.getElementById('cf-style');if(!e){e=document.createElement('style');e.id='cf-style';document.head.appendChild(e);}return e;}
+  function applyCF(raw){
+    if(!raw){st().textContent='';return;}
+    var font=raw.replace(' Bold','').trim(),bold=/bold/i.test(raw);
+    st().textContent="#title,#top h1,.active-title,.header-mirror .active-title,.proj-card.active .active-title{font-family:'"+font+"',sans-serif!important;font-weight:"+(bold?800:600)+"!important;font-style:normal!important;text-transform:none!important;letter-spacing:normal!important}";
+  }
+  window.setFont=function(){
+    try{
+      var sel=document.getElementById('fontSelect');if(!sel)return;
+      var raw=sel.value;
+      localStorage.setItem('custom_font',raw);
+      flag=true;
+      var top=document.getElementById('top');
+      if(top)FONTFX.forEach(function(c){top.classList.remove(c);});
+      flag=false;
+      applyCF(raw);
+      if(typeof syncChips==='function')try{syncChips();}catch(e){}
+      if(typeof syncActiveEffects==='function')try{syncActiveEffects();}catch(e){}
+      if(typeof saveHeaderState==='function')try{saveHeaderState();}catch(e){}
+    }catch(e){console.error(e);}
+  };
+  function boot(){
+    var top=document.getElementById('top');
+    if(top)new MutationObserver(function(){
+      if(flag)return;
+      if(FONTFX.some(function(c){return top.classList.contains(c);})&&document.getElementById('cf-style').textContent){
+        applyCF('');try{localStorage.removeItem('custom_font');}catch(e){}
+        var sel=document.getElementById('fontSelect');if(sel)sel.value='Arial';
+      }
+    }).observe(top,{attributes:true,attributeFilter:['class']});
+    var sf=null;try{sf=localStorage.getItem('custom_font');}catch(e){}
+    var sel=document.getElementById('fontSelect');
+    if(sf&&sel){sel.value=sf;if(!FONTFX.some(function(c){return top&&top.classList.contains(c);}))applyCF(sf);}
+    if(typeof renderColorLegend==='function')try{renderColorLegend();}catch(e){}
+    if(typeof render==='function')try{render();}catch(e){}
+  }
+  window.addEventListener('load',function(){setTimeout(boot,400);});
+})();
+</script>
 </body>
 </html>
