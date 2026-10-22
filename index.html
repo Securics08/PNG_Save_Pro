@@ -54,7 +54,13 @@ button,select,input{background:#000;color:var(--text);border:1px solid var(--bor
 .btn-outline-blue { background:transparent; color:#00aaff; border:1px solid #00aaff; padding:6px 12px; border-radius:6px; cursor:pointer; }
 
 </style>
-</head>
+<style>.fpWrap{position:relative;display:inline-block;vertical-align:middle;min-width:200px;max-width:340px}
+.fpBtn{background:#000 !important;color:#fff;border:1px solid #555;padding:7px 12px;border-radius:10px;cursor:pointer;width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;font-size:14px;white-space:nowrap;overflow:hidden}
+.fpLbl{overflow:hidden;text-overflow:ellipsis}
+.fpList{position:absolute;top:100%;left:0;z-index:2147483647;background:#000;border:1px solid #333;border-radius:12px;width:380px;max-width:92vw;max-height:500px;overflow:auto;padding:6px;margin-top:4px;box-shadow:0 12px 32px rgba(0,0,0,.9);display:none}
+.fpList div{padding:10px 12px;border-radius:8px;cursor:pointer;background:#000;margin-bottom:2px;border:1px solid transparent;font-size:18px;line-height:1.2;text-align:left}
+.fpList div:hover{background:#111 !important;border-color:#444}
+</style></head>
 <body class="zenburn-mode">
 
 <div id="topbar">
@@ -908,5 +914,23 @@ function openStudio(w){
 }
 function closeStudio(){ document.getElementById('studio-overlay').style.display='none'; }
 </script>
-</body>
+<script>
+function makeFontPicker(sel,opt){
+  if(!sel||sel.dataset.fp)return;sel.dataset.fp='1';opt=opt||{};
+  var w=document.createElement('span');w.className='fpWrap';
+  var b=document.createElement('button');b.type='button';b.className='fpBtn';
+  var lb=document.createElement('span');lb.className='fpLbl';var ar=document.createElement('span');ar.textContent='▼';ar.style.cssText='margin-left:8px;color:#fff';
+  b.appendChild(lb);b.appendChild(ar);
+  var l=document.createElement('div');l.className='fpList';
+  w.appendChild(b);w.appendChild(l);sel.parentNode.insertBefore(w,sel);sel.style.display='none';
+  function paint(el,o){el.style.fontFamily=o.style.fontFamily||'';el.style.color=o.style.color||'#fff';el.style.fontWeight=o.style.fontWeight||''}
+  function sync(){var o=sel.options[sel.selectedIndex];if(!o)return;if(lb.textContent!==o.textContent)lb.textContent=o.textContent;paint(lb,o)}
+  [].forEach.call(sel.options,function(o,i){var d=document.createElement('div');d.textContent=o.textContent;paint(d,o);d.onclick=function(e){e.stopPropagation();sel.selectedIndex=i;sel.value=o.value;sel.dispatchEvent(new Event('change',{bubbles:true}));sync();l.style.display='none'};l.appendChild(d)});
+  b.onclick=function(e){e.stopPropagation();var on=l.style.display==='block';document.querySelectorAll('.fpList').forEach(function(x){x.style.display='none'});if(!on){l.style.display='block';var s=l.querySelector('.fpSel');}};
+  document.addEventListener('click',function(e){if(!w.contains(e.target))l.style.display='none'});
+  sync();setInterval(sync,700);sel._fpSync=sync;
+}
+
+(function(){function go(){makeFontPicker(document.getElementById('fontFamily'));['calTf'].forEach(function(id){var e=document.getElementById(id);if(e&&e.options&&e.options.length>2)makeFontPicker(e)})}go();setTimeout(go,1500);})();
+</script></body>
 </html>
